@@ -18,7 +18,7 @@ export default function AboutPage() {
           }
         >
           <img
-            src="/mockup.png"
+            src="/image.png"
             alt="FairLens AI Dashboard Mockup"
             className="mx-auto rounded-2xl object-cover h-full object-left-top w-full"
             draggable={false}
