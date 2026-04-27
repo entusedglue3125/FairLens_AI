@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "FairLens AI",
+  "description": "Highlight text on any website to instantly detect and rewrite biased language.",
+  "version": "1.0",
+  "permissions": ["sidePanel", "contextMenus", "storage"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "extension.html"
+  },
+  "action": {
+    "default_title": "Open FairLens AI"
+  },
+  "icons": {
+    "128": "vite.svg"
+  }
+}
