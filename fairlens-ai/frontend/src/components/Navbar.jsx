@@ -12,7 +12,7 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        Fair<span>Lens</span> AI
+        <img src="/logo.png" alt="FairLens AI Logo" className="navbar-logo" />
       </div>
 
       <div className="navbar-tabs">

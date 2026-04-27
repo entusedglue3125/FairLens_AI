@@ -80,8 +80,9 @@ body {
   transition: background var(--transition);
 }
 [data-theme="light"] .navbar { background: rgba(240,242,247,0.88); }
-.navbar-brand { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
-.navbar-brand span { color: var(--accent); }
+.navbar-brand { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; display: flex; align-items: center; }
+.navbar-logo { height: 26px; width: auto; filter: invert(0.9) brightness(1.5); transition: filter var(--transition); }
+[data-theme="light"] .navbar-logo { filter: contrast(0.8) brightness(0.4); }
 .navbar-tabs { display: flex; gap: 4px; }
 .navbar-tab {
   padding: 6px 16px; border-radius: var(--radius-sm); border: none;
