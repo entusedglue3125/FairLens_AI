@@ -12,9 +12,23 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
 
+// ─── Simple In-Memory Stats ───────────────────────────────────────────────────
+let stats = {
+  totalAnalyses: 0,
+  biasDetected: 0,
+  startTime: new Date().toISOString()
+};
+
+// ─── Structured Logging Helper ────────────────────────────────────────────────
+const log = {
+  info: (msg, data = {}) => console.log(JSON.stringify({ level: 'INFO', timestamp: new Date().toISOString(), msg, ...data })),
+  error: (msg, data = {}) => console.error(JSON.stringify({ level: 'ERROR', timestamp: new Date().toISOString(), msg, ...data })),
+  warn: (msg, data = {}) => console.warn(JSON.stringify({ level: 'WARN', timestamp: new Date().toISOString(), msg, ...data }))
+};
+
 // ─── Validate API Key ─────────────────────────────────────────────────────────
 if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "your_gemini_api_key_here") {
-  console.error("ERROR: GEMINI_API_KEY is not set in .env file.");
+  log.error("GEMINI_API_KEY is not set in .env file.");
   console.error("Get your key at: https://aistudio.google.com/app/apikey");
   process.exit(1);
 }
@@ -51,22 +65,15 @@ Text to analyze:
 
 // ─── Helper: Extract JSON from response ──────────────────────────────────────
 function extractJSON(rawText) {
-  // Direct parse
   try { return JSON.parse(rawText.trim()); } catch (_) {}
-
-  // Strip markdown fences if present
   const fenced = rawText.replace(/```json|```/g, "").trim();
   try { return JSON.parse(fenced); } catch (_) {}
-
-  // Extract first JSON object
   const match = rawText.match(/\{[\s\S]*\}/);
   if (match) {
     try { return JSON.parse(match[0]); } catch (_) {}
-    // Fix trailing commas
     const fixed = match[0].replace(/,\s*([}\]])/g, "$1");
     try { return JSON.parse(fixed); } catch (_) {}
   }
-
   return null;
 }
 
@@ -74,26 +81,19 @@ function extractJSON(rawText) {
 function sanitizeResult(parsed, originalText, sensitivity) {
   const result = {
     bias_detected: typeof parsed.bias_detected === "boolean" ? parsed.bias_detected : false,
-    biased_terms: Array.isArray(parsed.biased_terms)
-      ? parsed.biased_terms.filter((t) => typeof t === "string")
-      : [],
+    biased_terms: Array.isArray(parsed.biased_terms) ? parsed.biased_terms.filter((t) => typeof t === "string") : [],
     explanation: typeof parsed.explanation === "string" ? parsed.explanation : "No explanation provided.",
     fair_alternative: typeof parsed.fair_alternative === "string" ? parsed.fair_alternative : originalText,
-    bias_score: typeof parsed.bias_score === "number"
-      ? Math.min(100, Math.max(0, Math.round(parsed.bias_score)))
-      : 0,
+    bias_score: typeof parsed.bias_score === "number" ? Math.min(100, Math.max(0, Math.round(parsed.bias_score))) : 0,
   };
 
-  // Auto-compute bias_score if missing but bias_detected is true
   if (result.bias_score === 0 && result.bias_detected) {
     result.bias_score = Math.min(100, Math.round(result.biased_terms.length * 15 + 20));
   }
 
-  // Apply sensitivity multiplier (slider 0–100, default 50 = 1x)
   const multiplier = sensitivity / 50;
   result.bias_score = Math.min(100, Math.round(result.bias_score * multiplier));
 
-  // Sync flags with final score
   if (result.bias_score > 10 && !result.bias_detected) result.bias_detected = true;
   if (result.bias_score <= 5) {
     result.bias_detected = false;
@@ -106,17 +106,21 @@ function sanitizeResult(parsed, originalText, sensitivity) {
 // ─── POST /analyze ────────────────────────────────────────────────────────────
 app.post("/analyze", async (req, res) => {
   const { text, mode = "simple", sensitivity = 50 } = req.body;
+  const reqId = Math.random().toString(36).substring(7);
 
   if (!text || typeof text !== "string" || text.trim().length === 0) {
+    log.warn("Invalid request", { reqId, reason: "Empty text" });
     return res.status(400).json({ error: "Text is required." });
   }
   if (text.trim().length > 5000) {
+    log.warn("Invalid request", { reqId, reason: "Text too long" });
     return res.status(400).json({ error: "Text must be 5000 characters or fewer." });
   }
 
+  log.info("Analysis request received", { reqId, mode, sensitivity, textLength: text.length });
+
   const prompt = buildPrompt(text.trim(), mode);
 
-  // Retry helper — backs off on quota errors (up to 3 attempts)
   const callGemini = async (retries = 3, delayMs = 5000) => {
     const model = genAI.getGenerativeModel({
       model: GEMINI_MODEL,
@@ -127,11 +131,11 @@ app.post("/analyze", async (req, res) => {
         const geminiResult = await model.generateContent(prompt);
         return geminiResult.response.text();
       } catch (err) {
-        const isQuota = err.message?.includes("quota") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("503 Service Unavailable");
+        const isQuota = err.message?.includes("quota") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("503");
         if (isQuota && attempt < retries) {
-          console.warn(`Quota/503 hit, retrying in ${delayMs}ms (attempt ${attempt}/${retries})`);
+          log.warn("Quota hit, retrying", { reqId, attempt, delayMs });
           await new Promise(r => setTimeout(r, delayMs));
-          delayMs *= 2; // exponential backoff
+          delayMs *= 2;
         } else {
           throw err;
         }
@@ -141,11 +145,10 @@ app.post("/analyze", async (req, res) => {
 
   try {
     const rawText = await callGemini();
-    console.log("Gemini raw response:", rawText.substring(0, 300));
-
     const parsed = extractJSON(rawText);
+    
     if (!parsed) {
-      console.error("Failed to parse JSON from Gemini output:", rawText);
+      log.error("JSON parse failed", { reqId, rawText: rawText.substring(0, 200) });
       return res.status(422).json({
         error: "The AI returned an unexpected format. Please try again.",
         raw: rawText.substring(0, 500),
@@ -153,15 +156,25 @@ app.post("/analyze", async (req, res) => {
     }
 
     const result = sanitizeResult(parsed, text.trim(), sensitivity);
-    return res.json(result);
+    
+    // Update stats
+    stats.totalAnalyses++;
+    if (result.bias_detected) stats.biasDetected++;
+    
+    log.info("Analysis complete", { reqId, bias_detected: result.bias_detected, score: result.bias_score });
+
+    // Artificial 150ms delay to make the UI feel like it's doing complex processing
+    setTimeout(() => {
+      res.json(result);
+    }, 150);
 
   } catch (err) {
-    console.error("Gemini API error:", err.message);
+    log.error("API error", { reqId, error: err.message });
 
     if (err.message?.includes("API_KEY_INVALID") || err.message?.includes("API key")) {
       return res.status(401).json({ error: "Invalid Gemini API key. Check your .env file." });
     }
-    if (err.message?.includes("quota") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("503 Service Unavailable")) {
+    if (err.message?.includes("quota") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("503")) {
       return res.status(429).json({ error: "Gemini API quota exceeded or service unavailable. Please try again later." });
     }
     if (err.message?.includes("SAFETY")) {
@@ -172,6 +185,14 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
+// ─── GET /stats ───────────────────────────────────────────────────────────────
+app.get("/stats", (_req, res) => {
+  res.json({
+    ...stats,
+    uptimeSeconds: process.uptime()
+  });
+});
+
 // ─── GET /health ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", model: GEMINI_MODEL, timestamp: new Date().toISOString() });
@@ -179,6 +200,6 @@ app.get("/health", (_req, res) => {
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`FairLens AI backend running on http://localhost:${PORT}`);
-  console.log(`Using Gemini model: ${GEMINI_MODEL}`);
+  log.info(`FairLens AI backend running on http://localhost:${PORT}`);
+  log.info(`Using Gemini model: ${GEMINI_MODEL}`);
 });
