@@ -35,19 +35,15 @@ fairlens-ai/
 
 ## 🚥 Quick Start
 
-### 1. Setup Backend
+### 1. Setup Project
 ```bash
-cd backend
-npm install
-# Create .env file with your GEMINI_API_KEY
-node server.js          # Runs on http://localhost:3002
+npm run install:all
 ```
 
-### 2. Setup Frontend
+### 2. Run Application
 ```bash
-cd frontend
-npm install
-npm run dev             # Runs on http://localhost:5173
+# Start both backend and frontend concurrently
+npm run dev
 ```
 
 ## 🧠 How It Works
@@ -60,6 +56,18 @@ npm run dev             # Runs on http://localhost:5173
 
 ## 🛡 Ethics & Methodology
 FairLens AI follows Google's AI Principles. It is designed for assistive auditing and professional growth, not for automated HR or legal decision-making. Always review suggestions before implementation.
+
+## 🌐 Deployment
+
+### Backend (Render)
+1. **Push code to GitHub**: `git push origin main`
+2. **Deploy Blueprint**: Go to [Render Dashboard](https://dashboard.render.com/), click **New** -> **Blueprint**, and connect this repo.
+3. **Set API Key**: After deployment starts, go to the `fairlens-ai-backend` service settings and add `GEMINI_API_KEY` to the Environment Variables.
+
+### Frontend (Firebase)
+1. **Set Production URL**: Update `frontend/.env.production` with your Render backend URL.
+2. **Build**: `cd frontend && npm run build`
+3. **Deploy**: `firebase deploy --only hosting`
 
 ---
 © 2026 FairLens AI Team
