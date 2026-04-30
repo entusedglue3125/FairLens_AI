@@ -12,3 +12,17 @@ services:
         value: gemini-2.0-flash-lite
       - key: GEMINI_API_KEY
         sync: false   # you will paste the key manually in Render dashboard
+
+  - type: web
+    name: fairlens-ai-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    staticPublishCustomRoutes:
+      - type: rewrite
+        source: /api/*
+        destination: http://fairlens-ai-backend:10000/*
+    envVars:
+      - key: VITE_API_BASE
+        value: /api
