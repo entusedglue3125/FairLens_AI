@@ -7,8 +7,7 @@ import ResultsDashboard from './components/ResultsDashboard';
 import HistorySidebar from './components/HistorySidebar';
 import AboutPage from './components/AboutPage';
 
-const API_BASE = 'http://localhost:3002';
-
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
 function LandingHero({ onScrollToApp }) {
   return (
     <div className="landing-hero">

@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: fairlens-ai-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash-lite
+      - key: GEMINI_API_KEY
+        sync: false   # you will paste the key manually in Render dashboard

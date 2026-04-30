@@ -4,7 +4,7 @@ import InputBox from '@/components/InputBox';
 import ResultsDashboard from '@/components/ResultsDashboard';
 import ControlPanel from '@/components/ControlPanel';
 
-const API_BASE = 'http://localhost:3002';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
 
 function PanelContent() {
   const { explainMode, sensitivity } = useApp();

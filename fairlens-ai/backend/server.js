@@ -11,6 +11,14 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const app = express();
 const PORT = process.env.PORT || 3001;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
+// Fallback model chain: if primary is overloaded, try next in list
+const MODEL_FALLBACKS = [
+  GEMINI_MODEL,
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+  "gemini-flash-lite-latest",
+  "gemini-flash-latest",
+].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
 
 // ─── Simple In-Memory Stats ───────────────────────────────────────────────────
 let stats = {
@@ -121,26 +129,28 @@ app.post("/analyze", async (req, res) => {
 
   const prompt = buildPrompt(text.trim(), mode);
 
-  const callGemini = async (retries = 3, delayMs = 5000) => {
-    const model = genAI.getGenerativeModel({
-      model: GEMINI_MODEL,
-      generationConfig: { temperature: 0.1, topP: 0.9, maxOutputTokens: 1024 },
-    });
-    for (let attempt = 1; attempt <= retries; attempt++) {
+  const callGemini = async () => {
+    let lastErr;
+    for (const modelName of MODEL_FALLBACKS) {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: { temperature: 0.1, topP: 0.9, maxOutputTokens: 1024 },
+      });
       try {
+        log.info("Trying model", { reqId, modelName });
         const geminiResult = await model.generateContent(prompt);
         return geminiResult.response.text();
       } catch (err) {
-        const isQuota = err.message?.includes("quota") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("503");
-        if (isQuota && attempt < retries) {
-          log.warn("Quota hit, retrying", { reqId, attempt, delayMs });
-          await new Promise(r => setTimeout(r, delayMs));
-          delayMs *= 2;
-        } else {
-          throw err;
+        const isOverloaded = err.message?.includes("503") || err.message?.includes("RESOURCE_EXHAUSTED") || err.message?.includes("high demand") || err.message?.includes("quota");
+        if (isOverloaded) {
+          log.warn("Model overloaded, trying fallback", { reqId, modelName, next: MODEL_FALLBACKS[MODEL_FALLBACKS.indexOf(modelName) + 1] });
+          lastErr = err;
+          continue;
         }
+        throw err; // non-quota error — rethrow immediately
       }
     }
+    throw lastErr; // all models exhausted
   };
 
   try {
